@@ -19,23 +19,20 @@ source(file.path(.proj_root, "config", "bbg_fields.R"))
 
 blpConnect()
 
-# Build quarter-end dates across the full window (use last business day of each quarter).
-quarter_ends <- seq(
-  from = settings$full_start_date,
-  to   = settings$full_end_date,
-  by   = "quarter"
-) |> as.Date()
-
-# Snap each to the prior business day if quarter-start; we want each quarter's end.
-quarter_ends <- as.Date(sapply(quarter_ends, function(d) {
-  # last day of the same quarter d falls into
-  yr <- as.integer(format(d, "%Y"))
-  q  <- ceiling(as.integer(format(d, "%m")) / 3)
-  end_month <- q * 3
-  end_day   <- switch(end_month, `3` = 31, `6` = 30, `9` = 30, `12` = 31)
-  as.Date(sprintf("%04d-%02d-%02d", yr, end_month, end_day))
-}), origin = "1970-01-01")
-quarter_ends <- unique(quarter_ends)
+# Build quarter-end dates across the full window. Construct as character
+# first to avoid sapply(...) collapsing Date objects into a numeric vector
+# that as.Date refuses to reinterpret.
+.years <- seq.int(as.integer(format(settings$full_start_date, "%Y")),
+                  as.integer(format(settings$full_end_date,   "%Y")))
+quarter_ends <- as.Date(unlist(lapply(.years, function(y) {
+  c(sprintf("%d-03-31", y),
+    sprintf("%d-06-30", y),
+    sprintf("%d-09-30", y),
+    sprintf("%d-12-31", y))
+})))
+quarter_ends <- quarter_ends[quarter_ends >= settings$full_start_date &
+                             quarter_ends <= settings$full_end_date]
+quarter_ends <- sort(unique(quarter_ends))
 
 message(sprintf("[universe] pulling INDX_MWEIGHT_HIST for %d quarter-ends",
                 length(quarter_ends)))
