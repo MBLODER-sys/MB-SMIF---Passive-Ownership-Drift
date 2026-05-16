@@ -10,11 +10,15 @@ bbg_fields <- list(
     index         = "SPX Index"
   ),
 
-  # Daily price / market data
+  # Daily price / market data.
+  # Note: BETA_ADJ_OVERRIDABLE requires an override and was dropped from
+  # this set; v1 backtest computes beta from CAPM regression, not this
+  # field. TOT_RETURN_INDEX_GROSS_DVDS is also patchy across the historic
+  # universe so it's omitted — daily total return is derived from PX_LAST
+  # + dividends in the local layer if needed.
   prices = c(
     "PX_LAST", "PX_OPEN", "PX_HIGH", "PX_LOW", "PX_VOLUME",
-    "EQY_SH_OUT", "CUR_MKT_CAP", "VOLATILITY_90D", "BETA_ADJ_OVERRIDABLE",
-    "TOT_RETURN_INDEX_GROSS_DVDS"            # total-return index for performance attribution
+    "EQY_SH_OUT", "CUR_MKT_CAP"
   ),
 
   # Quality screen fundamentals (point-in-time)
