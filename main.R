@@ -74,9 +74,13 @@ scores <- merge(scores,         value_scores,   by = c("rebalance_date", "ticker
 
 sectors_lookup <- unique(data$universe[, .(ticker, gics_sector_name)])
 sectors_lookup <- sectors_lookup[!duplicated(ticker)]
+# Named-vector lookup avoids the data.table NSE pitfall where a nested
+# `sectors_lookup[..., gics_sector_name]` resolves `ticker` against the
+# inner table instead of the outer scope.
+sectors_map <- setNames(sectors_lookup$gics_sector_name,
+                        sectors_lookup$ticker)
 scores[is.na(gics_sector_name),
-       gics_sector_name := sectors_lookup[match(ticker, sectors_lookup$ticker),
-                                          gics_sector_name]]
+       gics_sector_name := unname(sectors_map[ticker])]
 
 spx_sector_weights <- build_spx_sector_weights(data$universe, rebalance_dates)
 
