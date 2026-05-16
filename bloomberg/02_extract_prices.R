@@ -37,13 +37,77 @@ universe_dt <- as.data.table(read_parquet(
   file.path(paths$universe, "spx_constituents_quarterly.parquet"),
   mmap = FALSE
 ))
+
+# ---- Ticker normalisation ------------------------------------------------
+# INDX_MWEIGHT_HIST returns the Index Member column in a format that varies
+# across Bloomberg versions: "AAPL", "AAPL US", "AAPL UW Equity",
+# "AAPL US Equity" etc. The universe-extraction step blindly appended
+# " US Equity", which can produce double-suffixed garbage like
+# "AAPL US Equity US Equity" or "AAPL UW Equity US Equity" -- neither of
+# which BDH recognises, so every request returns empty.
+#
+# This block re-canonicalises every ticker to "XXXX US Equity".
+normalize_us_ticker <- function(t) {
+  t <- trimws(t)
+  t <- gsub("\\s+", " ", t)
+  # Strip a trailing " Equity" (any case).
+  t <- sub("\\s+Equity$", "", t, ignore.case = TRUE)
+  # Strip a trailing exchange / country code (1-3 uppercase letters).
+  t <- sub("\\s+[A-Z]{1,3}$", "", t)
+  paste(t, "US Equity")
+}
+universe_dt[, ticker := vapply(ticker, normalize_us_ticker, character(1))]
 all_tickers <- unique(universe_dt$ticker)
+message(sprintf("[prices] %d unique tickers after normalisation. First 5: %s",
+                length(all_tickers),
+                paste(head(all_tickers, 5), collapse = " | ")))
 
 # Trim field set to those guaranteed to return for US large caps.
 prices_fields <- c(
   "PX_LAST", "PX_OPEN", "PX_HIGH", "PX_LOW", "PX_VOLUME",
   "EQY_SH_OUT", "CUR_MKT_CAP"
 )
+
+# ---- Pre-flight test -----------------------------------------------------
+# Verify bdh actually works before iterating through ~400 chunks.
+message("[prices] preflight test 1/2: bdh('AAPL US Equity', 'PX_LAST', last 30d)...")
+preflight_aapl <- tryCatch(
+  bdh("AAPL US Equity", "PX_LAST",
+      start.date = Sys.Date() - 60,
+      end.date   = Sys.Date()),
+  error = function(e) NULL
+)
+if (is.null(preflight_aapl) || nrow(preflight_aapl) == 0) {
+  stop("[prices] PREFLIGHT FAILED on AAPL — bdh returned nothing. ",
+       "Run `bdp('AAPL US Equity','PX_LAST')` in the console: ",
+       "if THAT also returns NA, the Bloomberg session isn't live. ",
+       "If bdp works but bdh doesn't, your terminal may be entitled for ",
+       "real-time only (no history). Check DAPI <GO> for daily quota.",
+       call. = FALSE)
+}
+message(sprintf("[prices] preflight 1 OK: %d rows for AAPL, columns: %s",
+                nrow(preflight_aapl),
+                paste(names(preflight_aapl), collapse = ", ")))
+
+message(sprintf("[prices] preflight test 2/2: same query on '%s' (first universe ticker)...",
+                all_tickers[1]))
+preflight_univ <- tryCatch(
+  bdh(all_tickers[1], "PX_LAST",
+      start.date = Sys.Date() - 60,
+      end.date   = Sys.Date()),
+  error = function(e) NULL
+)
+if (is.null(preflight_univ) || nrow(preflight_univ) == 0) {
+  stop(sprintf(
+    "[prices] PREFLIGHT FAILED on first universe ticker '%s'. ",
+    all_tickers[1]),
+    "AAPL works, so bdh is fine — the universe tickers are formatted wrong. ",
+    sprintf("First 10 tickers: %s",
+            paste(head(all_tickers, 10), collapse = " | ")),
+    call. = FALSE)
+}
+message(sprintf("[prices] preflight 2 OK: %d rows for %s",
+                nrow(preflight_univ), all_tickers[1]))
 
 message(sprintf("[prices] pulling daily history for %d tickers (fields: %s)",
                 length(all_tickers), paste(prices_fields, collapse = ", ")))

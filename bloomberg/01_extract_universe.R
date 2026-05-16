@@ -62,10 +62,22 @@ for (i in seq_along(quarter_ends)) {
 
 universe_dt <- rbindlist(universe_rows, use.names = TRUE, fill = TRUE)
 
-# Attach ' US Equity' suffix to make tickers usable by bdp/bdh.
+# Canonicalise tickers to "XXXX US Equity". INDX_MWEIGHT_HIST can return
+# tickers in several formats ("AAPL", "AAPL US", "AAPL UW Equity",
+# "AAPL US Equity") depending on the Bloomberg session — strip any
+# existing suffix and re-append the canonical " US Equity".
 ticker_col <- intersect(c("index_member", "ticker", "security"), names(universe_dt))[1]
 setnames(universe_dt, ticker_col, "ticker_raw")
-universe_dt[, ticker := paste(ticker_raw, "US Equity")]
+normalize_us_ticker <- function(t) {
+  t <- trimws(t)
+  t <- gsub("\\s+", " ", t)
+  t <- sub("\\s+Equity$", "", t, ignore.case = TRUE)   # strip trailing Equity
+  t <- sub("\\s+[A-Z]{1,3}$", "", t)                   # strip exchange/country code
+  paste(t, "US Equity")
+}
+universe_dt[, ticker := vapply(ticker_raw, normalize_us_ticker, character(1))]
+message(sprintf("[universe] sample normalised tickers: %s",
+                paste(head(unique(universe_dt$ticker), 5), collapse = " | ")))
 
 # Attach GICS sector once (current snapshot; for true PIT, override with date in a future iteration).
 unique_tickers <- unique(universe_dt$ticker)
