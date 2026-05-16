@@ -49,5 +49,9 @@ if (!"date" %in% names(macro_dt)) {
 setkey(macro_dt, ticker, date)
 
 out_path <- file.path(paths$raw, "macro_daily.parquet")
+
+gc(verbose = FALSE)
+if (file.exists(out_path)) try(file.remove(out_path), silent = TRUE)
+
 write_parquet(macro_dt, out_path)
 message(sprintf("[macro] wrote %s (%d rows)", out_path, nrow(macro_dt)))

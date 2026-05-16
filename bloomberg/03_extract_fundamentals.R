@@ -20,7 +20,8 @@ source(file.path(.proj_root, "config", "bbg_fields.R"))
 blpConnect()
 
 universe_dt <- as.data.table(read_parquet(
-  file.path(paths$universe, "spx_constituents_quarterly.parquet")
+  file.path(paths$universe, "spx_constituents_quarterly.parquet"),
+  mmap = FALSE
 ))
 all_tickers <- unique(universe_dt$ticker)
 
@@ -82,5 +83,9 @@ if (!"date" %in% names(fundamentals_dt)) {
 setkey(fundamentals_dt, ticker, date)
 
 out_path <- file.path(paths$raw, "fundamentals_quarterly.parquet")
+
+gc(verbose = FALSE)
+if (file.exists(out_path)) try(file.remove(out_path), silent = TRUE)
+
 write_parquet(fundamentals_dt, out_path)
 message(sprintf("[fundamentals] wrote %s (%d rows)", out_path, nrow(fundamentals_dt)))

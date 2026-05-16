@@ -74,5 +74,11 @@ setDT(ref, keep.rownames = "ticker")
 universe_dt <- merge(universe_dt, ref, by = "ticker", all.x = TRUE)
 
 out_path <- file.path(paths$universe, "spx_constituents_quarterly.parquet")
+
+# Force release of any mmap held by a prior read in the same R session
+# (Windows: parquet write fails with WinError 1224 otherwise).
+gc(verbose = FALSE)
+if (file.exists(out_path)) try(file.remove(out_path), silent = TRUE)
+
 write_parquet(universe_dt, out_path)
 message(sprintf("[universe] wrote %s (%d rows)", out_path, nrow(universe_dt)))

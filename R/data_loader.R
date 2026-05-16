@@ -20,11 +20,14 @@ load_all_data <- function() {
       stop(sprintf("Missing extraction file: %s. Run bloomberg/run_all_extractions.R first.",
                    path), call. = FALSE)
     }
-    as.data.table(read_parquet(path))
+    # mmap = FALSE so re-running extraction in the same R session can
+    # overwrite the parquet (Windows locks mmap'd files).
+    as.data.table(read_parquet(path, mmap = FALSE))
   }
 
   universe   <- as.data.table(read_parquet(
-                   file.path(paths$universe, "spx_constituents_quarterly.parquet")))
+                   file.path(paths$universe, "spx_constituents_quarterly.parquet"),
+                   mmap = FALSE))
   prices     <- read_pq("prices_daily.parquet")
   fundamentals <- read_pq("fundamentals_quarterly.parquet")
   news       <- read_pq("news_signals_quarterly.parquet")
