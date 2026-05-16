@@ -11,13 +11,15 @@ compute_value <- function(fundamentals_dt, rebalance_dates) {
   setDT(fundamentals_dt)
   fundamentals_dt[, date := as.Date(date)]
 
-  # xs_zscore() comes from R/data_loader.R; sourced by main.R.
-
-  if ("px_to_book_ratio" %in% names(fundamentals_dt)) {
-    fundamentals_dt[, book_to_market := 1 / pmax(px_to_book_ratio, 1e-6)]
-  } else {
-    fundamentals_dt[, book_to_market := NA_real_]
+  # Ensure every column the screen references exists.
+  needed_cols <- c("earn_yld", "px_to_book_ratio", "fcf_yield")
+  for (col in needed_cols) {
+    if (!col %in% names(fundamentals_dt)) {
+      fundamentals_dt[, (col) := NA_real_]
+    }
   }
+
+  fundamentals_dt[, book_to_market := 1 / pmax(px_to_book_ratio, 1e-6)]
 
   out_rows <- vector("list", length(rebalance_dates))
 

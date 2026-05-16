@@ -32,6 +32,32 @@ opts <- c(bbg_fields$options_quarterly,
             nonTradingDayFillMethod = "NIL_VALUE"))
 ovrd <- c(FUND_PER = "FQ")
 
+# ---- Field preflight: drop bad/empty fields against AAPL ----------------
+message("[news] preflight: validating fields against AAPL...")
+valid_fields <- character(0)
+for (f in fields) {
+  ok <- tryCatch({
+    res <- bdh("AAPL US Equity", f,
+               start.date = as.Date("2022-01-01"),
+               end.date   = as.Date("2023-12-31"),
+               options    = opts,
+               overrides  = ovrd)
+    !is.null(res) && nrow(res) > 0
+  }, error = function(e) FALSE)
+  if (ok) {
+    valid_fields <- c(valid_fields, f)
+  } else {
+    message(sprintf("[news]   DROPPING bad/empty field: %s", f))
+  }
+}
+if (length(valid_fields) == 0) {
+  stop("[news] all fields failed validation — check entitlement.",
+       call. = FALSE)
+}
+message(sprintf("[news] proceeding with %d valid fields: %s",
+                length(valid_fields), paste(valid_fields, collapse = ", ")))
+fields <- valid_fields
+
 chunk_size <- 25
 ticker_chunks <- split(all_tickers,
                        ceiling(seq_along(all_tickers) / chunk_size))

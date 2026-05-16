@@ -31,6 +31,32 @@ fields <- bbg_fields$ownership
 # Ownership snapshots are reported quarterly via institutional filings.
 opts <- bbg_fields$options_quarterly
 
+# ---- Field preflight: drop bad/empty fields against AAPL ----------------
+message("[ownership] preflight: validating fields against AAPL...")
+valid_fields <- character(0)
+for (f in fields) {
+  ok <- tryCatch({
+    res <- bdh("AAPL US Equity", f,
+               start.date = as.Date("2022-01-01"),
+               end.date   = as.Date("2023-12-31"),
+               options    = opts)
+    !is.null(res) && nrow(res) > 0
+  }, error = function(e) FALSE)
+  if (ok) {
+    valid_fields <- c(valid_fields, f)
+  } else {
+    message(sprintf("[ownership]   DROPPING bad/empty field: %s", f))
+  }
+}
+if (length(valid_fields) == 0) {
+  stop("[ownership] all fields failed validation — check entitlement ",
+       "(PASSIVELY_HELD_PCT_OUT is often premium-only).",
+       call. = FALSE)
+}
+message(sprintf("[ownership] proceeding with %d valid fields: %s",
+                length(valid_fields), paste(valid_fields, collapse = ", ")))
+fields <- valid_fields
+
 chunk_size <- 25
 ticker_chunks <- split(all_tickers,
                        ceiling(seq_along(all_tickers) / chunk_size))

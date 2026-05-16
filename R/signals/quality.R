@@ -11,15 +11,20 @@ compute_quality <- function(fundamentals_dt, rebalance_dates) {
   setDT(fundamentals_dt)
   fundamentals_dt[, date := as.Date(date)]
 
-  # xs_zscore() comes from R/data_loader.R; sourced by main.R.
-
-  # Compute gross profitability = gross_profit / total_assets.
-  if (all(c("gross_profit", "bs_tot_asset") %in% names(fundamentals_dt))) {
-    fundamentals_dt[, gross_profitability :=
-                     gross_profit / pmax(bs_tot_asset, 1e-6)]
-  } else {
-    fundamentals_dt[, gross_profitability := NA_real_]
+  # Ensure every column the screen references exists, even if the
+  # extraction's field preflight dropped it. xs_zscore on an all-NA
+  # column returns NA, which rowMeans(na.rm=TRUE) skips cleanly.
+  needed_cols <- c("return_com_eqy", "gross_profit", "bs_tot_asset",
+                   "tot_debt_to_tot_eqy", "earn_growth_ttm_stdev")
+  for (col in needed_cols) {
+    if (!col %in% names(fundamentals_dt)) {
+      fundamentals_dt[, (col) := NA_real_]
+    }
   }
+
+  # Gross profitability = gross_profit / total_assets (Novy-Marx).
+  fundamentals_dt[, gross_profitability :=
+                   gross_profit / pmax(bs_tot_asset, 1e-6)]
 
   out_rows <- vector("list", length(rebalance_dates))
 

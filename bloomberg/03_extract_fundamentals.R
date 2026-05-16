@@ -1,6 +1,5 @@
 # bloomberg/03_extract_fundamentals.R
-# Quality + Value screen fundamentals, quarterly periodicity, with the
-# LATEST_ANNOUNCEMENT_DT override so each observation is point-in-time.
+# Quality + Value screen fundamentals, quarterly periodicity.
 
 suppressPackageStartupMessages({
   library(Rblpapi)
@@ -8,7 +7,6 @@ suppressPackageStartupMessages({
   library(arrow)
 })
 
-# Resolve project root robustly and load settings + field map.
 if (requireNamespace("rprojroot", quietly = TRUE)) {
   .proj_root <- rprojroot::find_root(rprojroot::has_file("README.md"))
 } else {
@@ -30,9 +28,37 @@ fields <- c(bbg_fields$quality, bbg_fields$value)
 opts <- c(bbg_fields$options_quarterly,
           c(nonTradingDayFillOption = "ALL_CALENDAR_DAYS",
             nonTradingDayFillMethod = "NIL_VALUE"))
+ovrd <- c(FUND_PER = "FQ")
 
-# Override forces FA periods to align with announcement dates (PIT).
-ovrd <- c(FUND_PER = "FQ", BEST_FPERIOD_OVERRIDE = "1FQ")
+# ---- Field preflight ------------------------------------------------------
+# bdh rejects an entire request if ANY field name is invalid for the
+# current Bloomberg version (e.g. "Bad field: GROSS_PROFIT_MARGIN"). Test
+# each field individually against AAPL and drop ones the terminal doesn't
+# recognise. Logged so the user can see which fields were skipped.
+message("[fundamentals] preflight: validating fields against AAPL...")
+valid_fields <- character(0)
+for (f in fields) {
+  ok <- tryCatch({
+    res <- bdh("AAPL US Equity", f,
+               start.date = as.Date("2022-01-01"),
+               end.date   = as.Date("2023-12-31"),
+               options    = opts,
+               overrides  = ovrd)
+    !is.null(res) && nrow(res) > 0
+  }, error = function(e) FALSE)
+  if (ok) {
+    valid_fields <- c(valid_fields, f)
+  } else {
+    message(sprintf("[fundamentals]   DROPPING bad/empty field: %s", f))
+  }
+}
+if (length(valid_fields) == 0) {
+  stop("[fundamentals] all fields failed validation — check entitlement.",
+       call. = FALSE)
+}
+message(sprintf("[fundamentals] proceeding with %d valid fields: %s",
+                length(valid_fields), paste(valid_fields, collapse = ", ")))
+fields <- valid_fields
 
 chunk_size <- 25
 ticker_chunks <- split(all_tickers,
@@ -67,10 +93,18 @@ for (i in seq_along(ticker_chunks)) {
     d[, ticker := tk]
     d
   })
+  rows <- rows[!vapply(rows, is.null, logical(1))]
+  if (length(rows) == 0) next
   fnd_list[[i]] <- rbindlist(rows, use.names = TRUE, fill = TRUE)
 }
 
 fundamentals_dt <- rbindlist(fnd_list, use.names = TRUE, fill = TRUE)
+
+if (nrow(fundamentals_dt) == 0) {
+  stop("[fundamentals] every chunk returned empty after field validation.",
+       call. = FALSE)
+}
+
 setnames(fundamentals_dt, names(fundamentals_dt),
          tolower(names(fundamentals_dt)))
 if (!"date" %in% names(fundamentals_dt)) {
@@ -88,4 +122,6 @@ gc(verbose = FALSE)
 if (file.exists(out_path)) try(file.remove(out_path), silent = TRUE)
 
 write_parquet(fundamentals_dt, out_path)
-message(sprintf("[fundamentals] wrote %s (%d rows)", out_path, nrow(fundamentals_dt)))
+message(sprintf("[fundamentals] wrote %s (%d rows, %d fields)",
+                out_path, nrow(fundamentals_dt),
+                length(names(fundamentals_dt)) - 2L))   # minus date + ticker

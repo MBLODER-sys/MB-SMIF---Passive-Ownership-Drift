@@ -21,10 +21,13 @@ bbg_fields <- list(
     "EQY_SH_OUT", "CUR_MKT_CAP"
   ),
 
-  # Quality screen fundamentals (point-in-time)
+  # Quality screen fundamentals (point-in-time).
+  # Note: GROSS_PROFIT_MARGIN is not a valid BBG field — compute gross
+  # profitability locally as GROSS_PROFIT / BS_TOT_ASSET.
+  # EARN_GROWTH_TTM_STDEV is not universally available; if present the
+  # quality screen uses it, otherwise it degrades to a 3-component score.
   quality = c(
     "RETURN_COM_EQY",
-    "GROSS_PROFIT_MARGIN",
     "GROSS_PROFIT",
     "BS_TOT_ASSET",
     "TOT_DEBT_TO_TOT_EQY",
