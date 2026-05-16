@@ -66,7 +66,14 @@ for (i in seq_along(ticker_chunks)) {
 }
 
 ownership_dt <- rbindlist(own_list, use.names = TRUE, fill = TRUE)
-setnames(ownership_dt, tolower(names(ownership_dt)))
+setnames(ownership_dt, names(ownership_dt), tolower(names(ownership_dt)))
+if (!"date" %in% names(ownership_dt)) {
+  cand <- grep("date", names(ownership_dt),
+               ignore.case = TRUE, value = TRUE)
+  if (length(cand) == 1L) setnames(ownership_dt, cand, "date")
+  else stop("[ownership] no date column. Columns: ",
+            paste(names(ownership_dt), collapse = ", "), call. = FALSE)
+}
 setkey(ownership_dt, ticker, date)
 
 out_path <- file.path(paths$raw, "ownership_quarterly.parquet")

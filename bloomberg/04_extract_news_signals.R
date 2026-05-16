@@ -67,7 +67,14 @@ for (i in seq_along(ticker_chunks)) {
 }
 
 news_dt <- rbindlist(news_list, use.names = TRUE, fill = TRUE)
-setnames(news_dt, tolower(names(news_dt)))
+setnames(news_dt, names(news_dt), tolower(names(news_dt)))
+if (!"date" %in% names(news_dt)) {
+  cand <- grep("date", names(news_dt),
+               ignore.case = TRUE, value = TRUE)
+  if (length(cand) == 1L) setnames(news_dt, cand, "date")
+  else stop("[news] no date column. Columns: ",
+            paste(names(news_dt), collapse = ", "), call. = FALSE)
+}
 setkey(news_dt, ticker, date)
 
 out_path <- file.path(paths$raw, "news_signals_quarterly.parquet")

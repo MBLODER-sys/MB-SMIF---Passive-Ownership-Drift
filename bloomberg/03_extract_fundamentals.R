@@ -70,7 +70,15 @@ for (i in seq_along(ticker_chunks)) {
 }
 
 fundamentals_dt <- rbindlist(fnd_list, use.names = TRUE, fill = TRUE)
-setnames(fundamentals_dt, tolower(names(fundamentals_dt)))
+setnames(fundamentals_dt, names(fundamentals_dt),
+         tolower(names(fundamentals_dt)))
+if (!"date" %in% names(fundamentals_dt)) {
+  cand <- grep("date", names(fundamentals_dt),
+               ignore.case = TRUE, value = TRUE)
+  if (length(cand) == 1L) setnames(fundamentals_dt, cand, "date")
+  else stop("[fundamentals] no date column. Columns: ",
+            paste(names(fundamentals_dt), collapse = ", "), call. = FALSE)
+}
 setkey(fundamentals_dt, ticker, date)
 
 out_path <- file.path(paths$raw, "fundamentals_quarterly.parquet")

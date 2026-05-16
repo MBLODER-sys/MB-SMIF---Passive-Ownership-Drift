@@ -38,7 +38,14 @@ rows <- lapply(names(res), function(tk) {
 })
 
 macro_dt <- rbindlist(rows, use.names = TRUE, fill = TRUE)
-setnames(macro_dt, tolower(names(macro_dt)))
+setnames(macro_dt, names(macro_dt), tolower(names(macro_dt)))
+if (!"date" %in% names(macro_dt)) {
+  cand <- grep("date", names(macro_dt),
+               ignore.case = TRUE, value = TRUE)
+  if (length(cand) == 1L) setnames(macro_dt, cand, "date")
+  else stop("[macro] no date column. Columns: ",
+            paste(names(macro_dt), collapse = ", "), call. = FALSE)
+}
 setkey(macro_dt, ticker, date)
 
 out_path <- file.path(paths$raw, "macro_daily.parquet")

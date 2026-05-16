@@ -61,8 +61,20 @@ for (i in seq_along(ticker_chunks)) {
 }
 
 prices_dt <- rbindlist(px_list, use.names = TRUE, fill = TRUE)
-setnames(prices_dt, tolower(names(prices_dt)))
-setnames(prices_dt, "date", "date")
+setnames(prices_dt, names(prices_dt), tolower(names(prices_dt)))
+
+# Defensive: the Bloomberg date column should be "date" after lowercasing,
+# but some Rblpapi versions and chunked returns can produce variants.
+if (!"date" %in% names(prices_dt)) {
+  date_candidates <- grep("date", names(prices_dt),
+                          ignore.case = TRUE, value = TRUE)
+  if (length(date_candidates) == 1L) {
+    setnames(prices_dt, date_candidates, "date")
+  } else {
+    stop(sprintf("[prices] cannot identify date column. Got columns: %s",
+                 paste(names(prices_dt), collapse = ", ")), call. = FALSE)
+  }
+}
 setkey(prices_dt, ticker, date)
 
 out_path <- file.path(paths$raw, "prices_daily.parquet")
