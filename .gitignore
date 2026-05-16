@@ -1,0 +1,24 @@
+# R / RStudio
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+*.Rproj
+renv/library/
+renv/python/
+renv/staging/
+
+# Data — never commit Bloomberg pulls or processed panels
+data/raw/
+data/processed/
+data/universe/*.parquet
+data/cache/
+
+# Outputs
+output/figures/
+output/tables/*.csv
+output/reports/
+
+# OS
+.DS_Store
+Thumbs.db

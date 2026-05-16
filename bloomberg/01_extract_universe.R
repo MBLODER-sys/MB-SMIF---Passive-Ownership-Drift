@@ -1,0 +1,82 @@
+# bloomberg/01_extract_universe.R
+# Extract historical S&P 500 constituents at each quarter-end.
+# Uses INDX_MWEIGHT_HIST with END_DATE_OVERRIDE for point-in-time membership.
+
+suppressPackageStartupMessages({
+  library(Rblpapi)
+  library(data.table)
+  library(arrow)
+})
+
+# Resolve project root robustly and load settings + field map.
+if (requireNamespace("rprojroot", quietly = TRUE)) {
+  .proj_root <- rprojroot::find_root(rprojroot::has_file("README.md"))
+} else {
+  .proj_root <- normalizePath(file.path(dirname(sys.frame(1)$ofile), ".."),
+                              mustWork = FALSE)
+}
+source(file.path(.proj_root, "config", "settings.R"))
+source(file.path(.proj_root, "config", "bbg_fields.R"))
+
+blpConnect()
+
+# Build quarter-end dates across the full window (use last business day of each quarter).
+quarter_ends <- seq(
+  from = settings$full_start_date,
+  to   = settings$full_end_date,
+  by   = "quarter"
+) |> as.Date()
+
+# Snap each to the prior business day if quarter-start; we want each quarter's end.
+quarter_ends <- as.Date(sapply(quarter_ends, function(d) {
+  # last day of the same quarter d falls into
+  yr <- as.integer(format(d, "%Y"))
+  q  <- ceiling(as.integer(format(d, "%m")) / 3)
+  end_month <- q * 3
+  end_day   <- switch(end_month, `3` = 31, `6` = 30, `9` = 30, `12` = 31)
+  as.Date(sprintf("%04d-%02d-%02d", yr, end_month, end_day))
+}), origin = "1970-01-01")
+quarter_ends <- unique(quarter_ends)
+
+message(sprintf("[universe] pulling INDX_MWEIGHT_HIST for %d quarter-ends",
+                length(quarter_ends)))
+
+universe_rows <- vector("list", length(quarter_ends))
+
+for (i in seq_along(quarter_ends)) {
+  d <- quarter_ends[i]
+  ovrd <- c(END_DATE_OVERRIDE = format(d, "%Y%m%d"))
+  res <- tryCatch(
+    bds(bbg_fields$universe$index,
+        bbg_fields$universe$members_field,
+        overrides = ovrd),
+    error = function(e) {
+      message(sprintf("[universe] failed for %s: %s", d, conditionMessage(e)))
+      NULL
+    }
+  )
+  if (is.null(res) || nrow(res) == 0) next
+
+  # Normalise column names (BDS returns "Index Member" and "Percent Weight" usually)
+  names(res) <- tolower(gsub("[^A-Za-z0-9]+", "_", names(res)))
+  setDT(res)
+  res[, snapshot_date := d]
+  universe_rows[[i]] <- res
+}
+
+universe_dt <- rbindlist(universe_rows, use.names = TRUE, fill = TRUE)
+
+# Attach ' US Equity' suffix to make tickers usable by bdp/bdh.
+ticker_col <- intersect(c("index_member", "ticker", "security"), names(universe_dt))[1]
+setnames(universe_dt, ticker_col, "ticker_raw")
+universe_dt[, ticker := paste(ticker_raw, "US Equity")]
+
+# Attach GICS sector once (current snapshot; for true PIT, override with date in a future iteration).
+unique_tickers <- unique(universe_dt$ticker)
+ref <- bdp(unique_tickers, bbg_fields$reference)
+setDT(ref, keep.rownames = "ticker")
+universe_dt <- merge(universe_dt, ref, by = "ticker", all.x = TRUE)
+
+out_path <- file.path(paths$universe, "spx_constituents_quarterly.parquet")
+write_parquet(universe_dt, out_path)
+message(sprintf("[universe] wrote %s (%d rows)", out_path, nrow(universe_dt)))

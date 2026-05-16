@@ -1,0 +1,22 @@
+Package: passiveownershipdrift
+Title: Passive Ownership Drift Strategy — v1 Backtest
+Version: 0.1.0
+Authors@R: person("MB SMIF", role = c("aut","cre"), email = "smif@example.com")
+Description: A long-only S&P 500 strategy that buys stocks experiencing
+    confirmed positive fundamental news where passive ownership is
+    structurally elevated, with a regime overlay that de-risks the same
+    exposure during stress phases.
+License: file LICENSE
+Depends: R (>= 4.2.0)
+Imports:
+    Rblpapi,
+    data.table,
+    arrow,
+    lubridate,
+    zoo,
+    xts,
+    PerformanceAnalytics,
+    ggplot2,
+    scales,
+    rprojroot
+Encoding: UTF-8
