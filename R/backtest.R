@@ -51,6 +51,8 @@ run_backtest <- function(rebalance_dates,
     if (next_rebal_idx <= length(rebalance_dates) &&
         d >= rebalance_dates[next_rebal_idx]) {
       rd <- rebalance_dates[next_rebal_idx]
+      # Verbose funnel log on the first three rebalances per backtest run so
+      # we can see where the selection filter is collapsing if it is.
       target <- build_portfolio(
         rebalance_date        = rd,
         scores_dt             = scores_dt,
@@ -58,7 +60,8 @@ run_backtest <- function(rebalance_dates,
         spx_sector_weights_dt = spx_sector_weights_dt,
         settings              = settings,
         prev_holdings         = prev_holdings,
-        mode                  = mode
+        mode                  = mode,
+        verbose               = (next_rebal_idx <= 3)
       )
 
       pending_tc_drag <- compute_tcost_drag(

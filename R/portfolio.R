@@ -12,26 +12,34 @@ build_portfolio <- function(rebalance_date,
                             spx_sector_weights_dt,
                             settings,
                             prev_holdings = NULL,
-                            mode = c("full", "news_only", "passive_only")) {
+                            mode = c("full", "news_only", "passive_only"),
+                            verbose = FALSE) {
 
   mode <- match.arg(mode)
   rd <- as.Date(rebalance_date)
 
-  # `rd` is a function-scope scalar; `rebalance_date` is a column on
-  # scores_dt and spx_sector_weights_dt. Because the parameter was
-  # renamed to `rd`, plain references find the scalar in calling scope
-  # with no NSE shadowing risk.
   s <- copy(scores_dt[rebalance_date == rd])
-  if (nrow(s) == 0) return(data.table(ticker = character(), weight = numeric()))
+  n0 <- nrow(s)
+  if (n0 == 0) {
+    if (verbose) message(sprintf("[build_portfolio %s %s] no scores rows for this date",
+                                  format(rd), mode))
+    return(data.table(ticker = character(), weight = numeric()))
+  }
 
   # Hard exclusions.
   s <- s[!is.na(quality_decile) & quality_decile > settings$quality_exclude_decile]
+  n_qual <- nrow(s)
   s <- s[!is.na(value_decile)   & value_decile   > settings$value_exclude_decile]
-  # News-eligibility only applies when the mode actually uses the news signal.
+  n_val <- nrow(s)
   if (mode != "passive_only") {
     s <- s[news_eligible == TRUE]
   }
-  if (nrow(s) == 0) return(data.table(ticker = character(), weight = numeric()))
+  n_news <- nrow(s)
+  if (n_news == 0) {
+    if (verbose) message(sprintf("[build_portfolio %s %s] funnel: %d -> qual %d -> val %d -> news %d (EMPTY)",
+                                  format(rd), mode, n0, n_qual, n_val, n_news))
+    return(data.table(ticker = character(), weight = numeric()))
+  }
 
   # Composite by mode.
   s[, composite := switch(mode,
@@ -39,7 +47,12 @@ build_portfolio <- function(rebalance_date,
                           news_only    = news_score,
                           passive_only = passive_intensity)]
   s <- s[!is.na(composite)]
-  if (nrow(s) == 0) return(data.table(ticker = character(), weight = numeric()))
+  n_comp <- nrow(s)
+  if (n_comp == 0) {
+    if (verbose) message(sprintf("[build_portfolio %s %s] funnel: %d -> qual %d -> val %d -> news %d -> composite %d (EMPTY)",
+                                  format(rd), mode, n0, n_qual, n_val, n_news, n_comp))
+    return(data.table(ticker = character(), weight = numeric()))
+  }
 
   # Turnover buffer.
   s[, comp_pctile := frank(composite, na.last = "keep") / .N]
@@ -54,6 +67,10 @@ build_portfolio <- function(rebalance_date,
   if (sum(s$selected) < 30) {
     s[, selected := comp_pctile >= (1 - settings$long_quintile_pct)]
   }
+  n_sel <- sum(s$selected)
+
+  if (verbose) message(sprintf("[build_portfolio %s %s] funnel: %d -> qual %d -> val %d -> news %d -> composite %d -> selected %d",
+                                format(rd), mode, n0, n_qual, n_val, n_news, n_comp, n_sel))
 
   sel <- s[selected == TRUE]
   if (nrow(sel) == 0) return(data.table(ticker = character(), weight = numeric()))

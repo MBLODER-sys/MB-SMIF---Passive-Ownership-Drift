@@ -89,6 +89,32 @@ cash_dt <- data$macro[series_name == "cash_rate",
                       .(date = as.Date(date),
                         daily_rate = px_last / 100 / 252)]
 
+# ---- Diagnostic: scores table coverage --------------------------------------
+# Before running any backtest, summarise how many tickers actually carry
+# each input signal. If any column is mostly NA, the funnel will collapse.
+message("\n[diag] scores table — non-NA counts (out of ", nrow(scores), " rows):")
+.diag <- data.table(
+  column = c("news_score", "news_eligible (TRUE)",
+             "passive_intensity", "quality_decile", "value_decile",
+             "gics_sector_name"),
+  non_na = c(sum(!is.na(scores$news_score)),
+             sum(scores$news_eligible == TRUE, na.rm = TRUE),
+             sum(!is.na(scores$passive_intensity)),
+             sum(!is.na(scores$quality_decile)),
+             sum(!is.na(scores$value_decile)),
+             sum(!is.na(scores$gics_sector_name)))
+)
+.diag[, pct := round(100 * non_na / nrow(scores), 1)]
+print(.diag)
+message("[diag] rebalances with >=100 selectable tickers (composite path):")
+sel_count <- scores[news_eligible == TRUE &
+                    !is.na(quality_decile) & quality_decile > 1 &
+                    !is.na(value_decile)   & value_decile   > 1 &
+                    !is.na(news_score) & !is.na(passive_intensity),
+                    .N, by = rebalance_date]
+message(sprintf("  %d of %d rebalances pass the FULL filter",
+                sum(sel_count$N >= 100), nrow(sel_count)))
+
 # --------------------------------------------------------------------------
 # Run all comparator backtests for a single horizon.
 # --------------------------------------------------------------------------
