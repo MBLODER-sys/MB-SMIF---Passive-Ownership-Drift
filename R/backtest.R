@@ -14,7 +14,8 @@ run_backtest <- function(rebalance_dates,
                          spx_sector_weights_dt,
                          cash_dt,
                          settings,
-                         mode = c("full", "news_only", "passive_only")) {
+                         mode = c("full", "news_only", "passive_only"),
+                         benchmark_ret_dt = NULL) {  # daily SPX TR returns
 
   mode <- match.arg(mode)
   # Local null-coalescing helper (avoids depending on rlang).
@@ -23,6 +24,13 @@ run_backtest <- function(rebalance_dates,
   prices_dt <- copy(prices_dt)
   prices_dt[, date := as.Date(date)]
   setkey(prices_dt, ticker, date)
+
+  # Benchmark return lookup keyed by date (used by the equity-floor fill).
+  bench_ret_lookup <- if (!is.null(benchmark_ret_dt)) {
+    setNames(benchmark_ret_dt$ret, as.character(as.Date(benchmark_ret_dt$date)))
+  } else {
+    setNames(numeric(0), character(0))
+  }
 
   trading_days <- sort(unique(prices_dt$date))
 
@@ -64,6 +72,10 @@ run_backtest <- function(rebalance_dates,
         verbose               = (next_rebal_idx <= 3)
       )
 
+      # build_portfolio already normalises target weights to sum to 1 when
+      # it returns names. The equity-floor enforcement is the engine's job
+      # below: if the held book accounts for less than min_equity_exposure
+      # on a given day, the residual is filled with benchmark, NOT cash.
       pending_tc_drag <- compute_tcost_drag(
         prev_holdings %||% data.table(ticker = character(), weight = numeric()),
         target[, .(ticker, weight)],
@@ -86,6 +98,22 @@ run_backtest <- function(rebalance_dates,
       port_ret_invested <- 0
       invested_share    <- 0
     }
+
+    # HARD CONSTRAINT (v2): never let cash exceed 1 - min_equity_exposure.
+    # If the held book accounts for less than the floor (e.g., between
+    # the strategy start and the first rebalance, or after a rebalance
+    # that returned no candidates), the residual goes into the SPX TR
+    # benchmark, not cash — so the strategy is at all times at least
+    # `min_equity_exposure` invested in equities.
+    floor_w <- settings$min_equity_exposure %||% 0.80
+    if (invested_share < floor_w) {
+      bench_today <- bench_ret_lookup[as.character(d)]
+      if (length(bench_today) == 0 || is.na(bench_today)) bench_today <- 0
+      benchmark_residual <- floor_w - invested_share
+      port_ret_invested  <- port_ret_invested + benchmark_residual * as.numeric(bench_today)
+      invested_share     <- invested_share + benchmark_residual
+    }
+
     cash_rate_daily <- cash_dt[date == d, daily_rate]
     if (length(cash_rate_daily) == 0) cash_rate_daily <- 0
     cash_share <- 1 - invested_share
@@ -94,7 +122,8 @@ run_backtest <- function(rebalance_dates,
                 cash_share * cash_rate_daily -
                 tc_drag_today
 
-    daily_results[[i]] <- data.table(date = d, ret = port_ret)
+    daily_results[[i]] <- data.table(date = d, ret = port_ret,
+                                     invested_share = invested_share)
   }
 
   out <- rbindlist(daily_results, use.names = TRUE, fill = TRUE)

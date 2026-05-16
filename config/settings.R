@@ -20,18 +20,48 @@ settings <- list(
   # Rebalance cadence
   quarterly_months    = c(1, 4, 7, 10),
 
-  # Portfolio construction
+  # ---- Portfolio construction --------------------------------------------
   long_quintile_pct            = 0.20,
   hold_decay_pct               = 0.25,
   entry_threshold_pct          = 0.80,
   max_position_weight          = 0.05,
   sector_neutral_tolerance     = 0.03,
-  quality_exclude_decile       = 1,
-  value_exclude_decile         = 1,
-  min_news_components_positive = 3,
   vol_window_days              = 90,
 
-  # Passive ownership filing lag (~45 calendar days)
+  # ---- Risk-control SCREENS (relaxed in v2) ------------------------------
+  # v1 dropped everything in the bottom decile. With Bloomberg field
+  # entitlement gaps producing many NA scores, that filter collapsed the
+  # entire candidate universe to zero. v2 drops only stocks that are
+  # explicitly in the bottom *X* decile AND have a quality / value score
+  # defined. Tickers with NA scores are kept (the multi-signal
+  # composite handles them downstream).
+  quality_exclude_decile       = 1,
+  value_exclude_decile         = 1,
+  exclude_only_when_scored     = TRUE,   # NEW in v2
+
+  # News confirmation: require N positive components out of however many
+  # ARE NOT NA. v1 hard-coded `n_positive >= 3` even when only 2 components
+  # had data — guaranteeing failure. v2 uses a fraction of available
+  # components.
+  min_news_components_positive = 3,      # absolute floor (legacy, unused now)
+  min_news_positive_fraction   = 0.50,   # NEW: 50% of non-NA components
+
+  # ---- HARD CONSTRAINT: equity exposure floor (v2) -----------------------
+  # User constraint: max 20% in cash/fixed income at all times. The
+  # backtest enforces this by scaling final invested weights up to the
+  # floor whenever the unconstrained build would otherwise leave too much
+  # in cash.
+  min_equity_exposure          = 0.80,   # NEW
+
+  # ---- Composite signal (v2 default uses RANK product) -------------------
+  # v1 used   composite = news_z * passive_z
+  # Negative * negative = positive, so genuinely bad-news stocks in
+  # low-passive sectors scored high — economically wrong and noisy. v2
+  # default uses rank-fraction product, both in [0,1], so the composite is
+  # also in [0,1] and only high when BOTH components rank high.
+  composite_method             = "rank_product",   # "rank_product" | "zscore_product" | "rank_sum"
+
+  # Passive ownership filing lag (~45 calendar days; unused on proxy path)
   passive_ownership_lag_days   = 45,
 
   # Transaction costs (bps per side)

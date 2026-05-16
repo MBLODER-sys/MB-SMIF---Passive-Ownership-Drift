@@ -135,6 +135,14 @@ run_horizon <- function(start_date, label) {
   spx_w_win  <- spx_sector_weights[rebalance_date >= start_date &
                                    rebalance_date <= settings$backtest_end]
 
+  # Daily SPX TR return series — used by the engine's equity-floor fill so
+  # that any residual not allocated to candidate stocks earns the market
+  # return, not the cash rate (enforces v2 80% min equity exposure).
+  spxt_ret <- in_window(data$macro)[series_name == "spx_tr"][order(date),
+                .(date = as.Date(date),
+                  ret  = px_last / shift(px_last, 1L) - 1)]
+  spxt_ret[is.na(ret), ret := 0]
+
   modes <- c("full", "news_only", "passive_only")
   mode_labels <- c(full = "Strategy",
                    news_only = "News-only",
@@ -149,7 +157,8 @@ run_horizon <- function(start_date, label) {
       spx_sector_weights_dt = spx_w_win,
       cash_dt               = cash_win,
       settings              = settings,
-      mode                  = m
+      mode                  = m,
+      benchmark_ret_dt      = spxt_ret
     )
     bt[, strategy := mode_labels[[m]]]
     bt
