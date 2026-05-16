@@ -21,10 +21,16 @@ load_all_data <- function() {
     as.data.table(read_parquet(path, mmap = FALSE))
   }
 
+  universe <- as.data.table(read_parquet(
+    file.path(paths$universe, "spx_constituents_quarterly.parquet"),
+    mmap = FALSE))
+  # The universe panel mixes lowercased BDS columns with uppercase BDP
+  # columns (GICS_SECTOR_NAME etc.) — normalise here so downstream code
+  # can rely on consistent lowercase names.
+  setnames(universe, names(universe), tolower(names(universe)))
+
   list(
-    universe     = as.data.table(read_parquet(
-      file.path(paths$universe, "spx_constituents_quarterly.parquet"),
-      mmap = FALSE)),
+    universe     = universe,
     prices       = read_pq("prices_daily.parquet"),
     fundamentals = read_pq("fundamentals_quarterly.parquet"),
     news         = read_pq("news_signals_quarterly.parquet"),

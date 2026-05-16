@@ -83,6 +83,10 @@ message(sprintf("[universe] sample normalised tickers: %s",
 unique_tickers <- unique(universe_dt$ticker)
 ref <- bdp(unique_tickers, bbg_fields$reference)
 setDT(ref, keep.rownames = "ticker")
+# BDP returns columns in the requested case (GICS_SECTOR_NAME, etc.) —
+# lowercase them so the merged panel has a consistent schema with the
+# BDS-derived columns.
+setnames(ref, names(ref), tolower(names(ref)))
 universe_dt <- merge(universe_dt, ref, by = "ticker", all.x = TRUE)
 
 out_path <- file.path(paths$universe, "spx_constituents_quarterly.parquet")
