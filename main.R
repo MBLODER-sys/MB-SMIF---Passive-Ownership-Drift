@@ -56,7 +56,8 @@ news_scores <- compute_fundamental_news(
 message("[main] computing passive intensity signal...")
 passive_scores <- compute_passive_intensity(
   data$ownership, data$universe, rebalance_dates,
-  lag_days = settings$passive_ownership_lag_days
+  prices_dt = prices_with_ret,
+  lag_days  = settings$passive_ownership_lag_days
 )
 
 message("[main] computing quality screen...")
