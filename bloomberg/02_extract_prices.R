@@ -91,23 +91,34 @@ message(sprintf("[prices] preflight 1 OK: %d rows for AAPL, columns: %s",
 
 message(sprintf("[prices] preflight test 2/2: same query on '%s' (first universe ticker)...",
                 all_tickers[1]))
+# The universe contains historical S&P 500 members; many are now delisted
+# and appear as Bloomberg GUIDs like '0111145D US Equity'. These only have
+# historical data, so a "last 30 days" test will fail spuriously. Prefer
+# a ticker that starts with a letter (active-style), and use a long
+# historical date range so even mostly-delisted names have a window of
+# valid data.
+active_candidates <- all_tickers[grepl("^[A-Z]", all_tickers)]
+preflight_ticker  <- if (length(active_candidates) > 0)
+                       active_candidates[1] else all_tickers[1]
 preflight_univ <- tryCatch(
-  bdh(all_tickers[1], "PX_LAST",
-      start.date = Sys.Date() - 60,
-      end.date   = Sys.Date()),
+  bdh(preflight_ticker, "PX_LAST",
+      start.date = as.Date("2015-01-01"),
+      end.date   = as.Date("2024-12-31")),
   error = function(e) NULL
 )
 if (is.null(preflight_univ) || nrow(preflight_univ) == 0) {
   stop(sprintf(
-    "[prices] PREFLIGHT FAILED on first universe ticker '%s'. ",
-    all_tickers[1]),
-    "AAPL works, so bdh is fine — the universe tickers are formatted wrong. ",
-    sprintf("First 10 tickers: %s",
-            paste(head(all_tickers, 10), collapse = " | ")),
+    "[prices] PREFLIGHT FAILED on '%s' (2015-2024). ",
+    preflight_ticker),
+    "AAPL works but no universe ticker does. Possible causes: ",
+    "(a) tickers malformed — paste these into the terminal to verify: ",
+    sprintf("%s. ", paste(head(all_tickers, 5), collapse = " | ")),
+    "(b) entitlement gap for these specific names. ",
+    "(c) all tickers are GUIDs for delisted names without bdh history.",
     call. = FALSE)
 }
-message(sprintf("[prices] preflight 2 OK: %d rows for %s",
-                nrow(preflight_univ), all_tickers[1]))
+message(sprintf("[prices] preflight 2 OK: %d rows for '%s'",
+                nrow(preflight_univ), preflight_ticker))
 
 message(sprintf("[prices] pulling daily history for %d tickers (fields: %s)",
                 length(all_tickers), paste(prices_fields, collapse = ", ")))
