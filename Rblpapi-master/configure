@@ -1,0 +1,120 @@
+#!/bin/sh
+## Emacs please make this -*- mode: shell-mode; -*-
+##
+##  configure -- Unix build preparation system
+##
+##  Copyright (C) 2015 - 2025  Dirk Eddelbuettel and Jeroen Ooms.
+##
+##  This file is part of Rblpapi
+##
+##  Rblpapi is free software: you can redistribute it and/or modify
+##  it under the terms of the GNU General Public License as published by
+##  the Free Software Foundation, either version 2 of the License, or
+##  (at your option) any later version.
+##
+##  Rblpapi is distributed in the hope that it will be useful,
+##  but WITHOUT ANY WARRANTY; without even the implied warranty of
+##  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+##  GNU General Public License for more details.
+##
+##  You should have received a copy of the GNU General Public License
+##  along with Rblpapi.  If not, see <http://www.gnu.org/licenses/>.
+
+## Check that we are on Unix
+if ! [ -x $(command -v uname) ]; then
+    echo "You do not have 'uname' so this is unlikely to be a Unix system. Exiting."
+    exit 1
+fi
+
+## Check for Linux or OSX. "These days" we support x86_64 on Linux and arm64 on macOS.
+## At CRAN or R-universe we encounter nothing else.
+## Use Sys.info() to be cross-compilation safe.
+: ${R_HOME=$(R RHOME)}
+sysname=$(uname)
+arch=$(uname -m)
+osname=$(${R_HOME}/bin/Rscript -e 'cat(R.version$os)')
+if [ ${sysname} = "Linux" ] && [ ${osname} != "linux-musl" ]; then
+    platform="linux"
+elif [ ${sysname} = "Darwin" ]; then
+    platform="osx"
+else
+    echo "Unsupported platform: ${sysname} (${osname})"
+    echo "Check https://www.bloomberg.com/professional/support/api-library/ for possible support first."
+    echo "Contributions welcome, see https://github.com/Rblp/blp for integration with Rblapi."
+    echo "The build will proceed but not be functional for lack of a library."
+    cp -ax src/Makevars.no_blp src/Makevars
+    exit 0
+fi
+
+## Populate Makevars
+if [ "${arch}" = "x86_64" ] && [ "${platform}" = "linux" ]; then
+    echo "Setting up compilation for a ${platform} ${arch} system"
+    sed -e"s/@have_blp@/yes/" src/Makevars.in > src/Makevars
+    flavour="64"
+    # this used to matter when Blp supported x86 on macos, they no longer do
+    #if [ "${platform}" = "osx" ]; then
+    #    cpu="x86"
+    #fi
+elif [ "${arch}" = "arm64" ] && [ "${platform}" = "osx" ]; then
+    echo "Setting up compilation for a ${platform} ${arch} system"
+    sed -e"s/@have_blp@/yes/" src/Makevars.in > src/Makevars
+    flavour="64"
+    cpu="arm"
+#elif [ "${arch}" = "i686" ]; then
+#    echo "Setting up compilation for a ${platform} 32-bit system"
+#    sed -e"s/@config@/blpapi3_32/" src/Makevars.in > src/Makevars
+#    flavour="32"
+else
+    echo "Unsupported platform and architecture combination: ${platform} ${arch}."
+    echo "The build will proceed but not be functional for lack of a library."
+    echo "If you need such a combination please get in touch with the Blp vendor."
+    cp -ax src/Makevars.no_blp src/Makevars
+    exit 0
+fi
+
+## helper function to not rely on curl which at least on OS X fails to follow redirects
+download() {
+    url=${1}
+    ## sadly, for Travis we cannot rely on R as it lacks libcurl
+    libcurl=$(${R_HOME}/bin/Rscript -e 'cat(capabilities()[["libcurl"]])')
+    ## so when we have libcurl in R, use it -- else fall back to curl
+    if [ ${libcurl} = "TRUE" ]; then
+        file=$(basename ${url})
+        ${R_HOME}/bin/Rscript -e "download.file(\"${url}\", \"${file}\", quiet=TRUE, method='libcurl')"
+    else
+        curl -s -k -L -O ${url}
+    fi
+}
+
+## default file names, can override with say 'blpHeaders="/opt/blp/blpHeaders_1.2.3.tar.gz"'
+## respects enviroment variable so 'blpHeaders="/opt/blp/blpHeaders_1.2.3.tar.gz" ./configure' works
+: ${blpHeaders="blpHeaders.tar.gz"}
+: ${blpLibrary="blpLibrary.tar.gz"}
+: ${blpBranch="master"}
+
+## Check for header files and download if needed, this looks at repo blp in directory headers/
+cwd=$(pwd)
+mkdir -p blp/${platform}
+cd blp/${platform}
+if [ ! -f ${blpHeaders} ]; then
+    download https://github.com/Rblp/blp/raw/${blpBranch}/headers/${platform}/blpHeaders.tar.gz
+else
+    echo "** using ${blpHeaders}"
+fi
+tar xfz ${blpHeaders} -C ../../inst
+cd ${cwd}
+
+## Get and install precompiled shared library, this looks at repo blp in directoris 'PlatformFlavourCpu'
+## Here flavour is mostly redundant as of 2024 as 32 bit is no longer built at CRAN but we support user who may have it
+## The Cpu tag is used only on macos and it used to distinguish between (old) x86_64 and newer arm64
+mkdir -p inst/blp
+cd blp/${platform}
+if [ ! -f ${blpLibrary} ]; then
+    download https://github.com/Rblp/blp/raw/${blpBranch}/${platform}${flavour}${cpu}/blpLibrary.tar.gz
+else
+    echo "** using ${blpLibrary}"
+fi
+tar xfz ${blpLibrary} -C ../../inst/blp/ libblpapi3_${flavour}.so
+cd ${cwd}
+
+exit 0
