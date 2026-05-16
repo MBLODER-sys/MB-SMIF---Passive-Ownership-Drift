@@ -62,11 +62,8 @@ message(sprintf("[prices] %d unique tickers after normalisation. First 5: %s",
                 length(all_tickers),
                 paste(head(all_tickers, 5), collapse = " | ")))
 
-# Trim field set to those guaranteed to return for US large caps.
-prices_fields <- c(
-  "PX_LAST", "PX_OPEN", "PX_HIGH", "PX_LOW", "PX_VOLUME",
-  "EQY_SH_OUT", "CUR_MKT_CAP"
-)
+# Field set actually consumed by the v1 backtest — see config/bbg_fields.R.
+prices_fields <- bbg_fields$prices
 
 # ---- Pre-flight test -----------------------------------------------------
 # Verify bdh actually works before iterating through ~400 chunks.

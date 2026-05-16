@@ -11,14 +11,15 @@ bbg_fields <- list(
   ),
 
   # Daily price / market data.
-  # Note: BETA_ADJ_OVERRIDABLE requires an override and was dropped from
-  # this set; v1 backtest computes beta from CAPM regression, not this
-  # field. TOT_RETURN_INDEX_GROSS_DVDS is also patchy across the historic
-  # universe so it's omitted — daily total return is derived from PX_LAST
-  # + dividends in the local layer if needed.
+  # Trimmed to the four fields actually used by the v1 backtest:
+  #   PX_LAST       -> daily returns (build_daily_returns)
+  #   PX_VOLUME     -> turnover numerator (passive proxy)
+  #   EQY_SH_OUT    -> turnover fallback denominator
+  #   CUR_MKT_CAP   -> size signal within sector (passive proxy)
+  # PX_OPEN/HIGH/LOW are not referenced anywhere in the simplified
+  # strategy; pulling them inflates the parquet by ~40% with no benefit.
   prices = c(
-    "PX_LAST", "PX_OPEN", "PX_HIGH", "PX_LOW", "PX_VOLUME",
-    "EQY_SH_OUT", "CUR_MKT_CAP"
+    "PX_LAST", "PX_VOLUME", "EQY_SH_OUT", "CUR_MKT_CAP"
   ),
 
   # Quality screen fundamentals (point-in-time).
