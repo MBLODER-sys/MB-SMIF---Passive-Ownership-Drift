@@ -1,0 +1,378 @@
+================================================================================
+PROJECT CONTEXT — Passive Ownership Drift strategy (Python rebuild)
+For: a new Claude Code instance in VS Code on the Bloomberg terminal PC
+================================================================================
+
+PURPOSE OF THIS FILE
+--------------------
+The R prototype of this strategy lives on the `claude/v2-optimise-passive-drift`
+branch of this repo. We are now soft-restarting in Python. This file gives you
+(the new Claude) enough context to start writing Python without re-deriving
+everything from scratch. The thesis and the strategy are open to revision —
+your job is not to mechanically port the R code, it is to build a working
+backtest of the underlying idea (or a refined version of it) using whatever
+Python tooling is cleanest.
+
+
+1. THE THESIS (1 paragraph)
+----------------------------
+Within the S&P 500, stocks whose ownership has been disproportionately captured
+by passive / mandate-driven holders experience systematically slower
+incorporation of fundamental information into prices, producing a tradable
+post-news drift over weeks to months. The marginal price-setter has thinned, so
+information diffuses at the speed of the remaining active pool. The full
+README.md in this repo has the academic citations (Bernard & Thomas, Hong &
+Stein, Hirshleifer & Teoh, Ben-David et al., Coles et al., Appel/Gormley/Keim).
+Treat the thesis as a starting point — if the proxy data ends up suggesting a
+cleaner variant, propose it.
+
+
+2. HARD USER CONSTRAINTS (do not violate)
+------------------------------------------
+- No tactical asset allocation. No market timing, no regime overlays that
+  shift exposure to/from cash based on macro signals.
+- No derivatives. Cash-equity book only. No options, futures, swaps.
+- Max 20% cash or fixed income at all times. The portfolio must be at least
+  80% in equities, every day. If the strategy can't find candidate stocks,
+  the residual goes into the S&P 500 TR (the benchmark), NOT cash.
+- Long-only. No shorting.
+- Universe: historical S&P 500 (point-in-time, survivorship-bias-free) over
+  2005-2024. The 10yr (2015-2024) and 20yr (2005-2024) windows are the
+  primary backtest horizons.
+
+
+3. BLOOMBERG ENVIRONMENT REALITIES (discovered the hard way in R)
+-----------------------------------------------------------------
+The terminal this code runs on has DAPI desktop access via BLPAPI. The
+following gaps are real and PRECIPITATED most of our R debugging cycles:
+
+ENTITLEMENT-LOCKED FIELDS (preflight against AAPL drops them silently):
+- PASSIVELY_HELD_PCT_OUT       <-- the KEY field for the strategy
+- ACTIVELY_HELD_PCT_OUT
+- INSTITUTIONAL_PERCENT_HELD
+- ETF_OWNED_PCT, INDEX_OWNED_PCT (also tried, also not entitled)
+
+INVALID FIELD NAMES (BBG rejects them outright with "Bad field"):
+- GROSS_PROFIT_MARGIN          <-- not a real BBG field; compute locally
+                                   as GROSS_PROFIT / BS_TOT_ASSET
+- BETA_ADJ_OVERRIDABLE         <-- requires an override; v1 doesn't use
+                                   it anyway (CAPM regression is local)
+
+FIELDS THAT WORK AND ARE USED:
+- Universe:     INDX_MWEIGHT_HIST (bds), with END_DATE_OVERRIDE per quarter
+- Reference:    GICS_SECTOR_NAME, GICS_INDUSTRY_NAME, ID_BB_GLOBAL (bdp)
+- Prices:       PX_LAST, PX_VOLUME, EQY_SH_OUT, CUR_MKT_CAP (bdh, daily)
+- Fundamentals: RETURN_COM_EQY, GROSS_PROFIT, BS_TOT_ASSET,
+                TOT_DEBT_TO_TOT_EQY, EARN_GROWTH_TTM_STDEV (maybe),
+                CF_CASH_FROM_OPER, ASSET_TURNOVER, PE_RATIO,
+                PX_TO_BOOK_RATIO, EV_TO_T12M_EBITDA, CF_FREE_CASH_FLOW,
+                FCF_YIELD, EARN_YLD (bdh, quarterly)
+- News:         BEST_EPS, IS_EPS, BEST_SALES, SALES_REV_TURN,
+                OPER_MARGIN, BEST_EPS_REVISION_RATIO_1M (bdh, quarterly)
+- Ownership:    EQY_FLOAT  (the only ownership field that works)
+- Macro:        SPXT Index, SPXEW Index, USGG3M Index (bdh, daily, PX_LAST)
+
+UNIVERSE FORMAT GOTCHA:
+INDX_MWEIGHT_HIST returns tickers in mixed formats. Many are Bloomberg
+"delisted GUIDs" with digit prefixes like "0111145D US Equity" — these
+are historical S&P 500 members whose original ticker no longer exists.
+They WILL return historical data for the years they were active. The
+canonical normaliser strips any trailing " Equity" and any 1-3 letter
+exchange code and re-appends " US Equity". After normalisation, the
+20-year universe has ~940 unique tickers, of which roughly half are
+delisted GUIDs.
+
+BDH CHUNKING:
+Bloomberg's per-request data-point cap is not documented but is in the
+neighbourhood of a few hundred thousand points. A naive pull of 50
+tickers × 7 fields × 5000 days returns silently empty. Use chunks of
+10 tickers × 5-year date windows.
+
+
+4. THE PASSIVE-OWNERSHIP PROXY (key methodological choice)
+-----------------------------------------------------------
+Because PASSIVELY_HELD_PCT_OUT is entitlement-locked, the R prototype's
+final passive-intensity score is a defensible proxy:
+
+    passive_intensity_proxy
+        = z_in_sector( log(90d avg market_cap) )           [size leg]
+        + z_in_sector( -1 * 90d avg PX_VOLUME/EQY_FLOAT )  [turnover leg]
+
+both terms z-scored within GICS sector, averaged equal-weight.
+
+Defensibility:
+- Size within sector: Appel, Gormley & Keim (2016, JFE) "Passive
+  Investors, Not Passive Owners" uses end-of-May market cap as the
+  Russell 1000/2000 assignment variable — same identification chain.
+- Float-adjusted turnover: low PX_VOLUME / EQY_FLOAT is a direct
+  microstructure signal of a buy-and-hold holder base. Float-adjusting
+  (vs raw shares outstanding) is important — raw turnover misclassifies
+  controlled-ownership stocks (founder stakes, Berkshire-type
+  structures) as "passive-heavy" when they are just illiquid.
+
+The new Python code should keep a dual-path design: if
+PASSIVELY_HELD_PCT_OUT EVER becomes available, use it directly; else
+fall back to the proxy. Switch at runtime based on what the BDH
+preflight returns.
+
+
+5. WHAT THE R PROTOTYPE DELIVERED, AND WHAT IT GOT WRONG
+---------------------------------------------------------
+Repository layout on the latest branch:
+
+    config/        settings.R, bbg_fields.R
+    bloomberg/     6 extraction scripts (universe, prices, fundamentals,
+                   news, ownership, macro) + orchestrator
+    R/             data_loader, signals/{fundamental_news, passive_intensity,
+                   quality, value}, portfolio, backtest, metrics,
+                   visualization
+    data/raw/      cached parquet outputs of the BBG extractions
+    data/universe/ cached SPX historical constituent panel
+    output/        figures, tables
+
+What v1 delivered:
+- Survivorship-bias-free historical universe (~940 tickers)
+- Daily price panel (~3M rows, ~50 MB parquet)
+- Quarterly fundamentals + news signals
+- Quality and Value risk-control screens
+- Composite news x passive signal
+- Walk-forward backtest with explicit lookahead guard
+- Transaction-cost drag, sector neutrality with tolerance, position cap,
+  turnover buffer
+- Performance metrics: CAGR, vol, Sharpe, Sortino, max DD, Calmar, CVaR,
+  Ulcer, hit rate, CAPM alpha/beta, IR
+
+What v1 got wrong (and v2 partially fixes):
+- The composite was news_z * passive_z. Negative * negative = positive,
+  so genuinely bad-news stocks in low-passive sectors scored well.
+  v2 default is rank_product (both in [0,1], no sign-flip).
+- The quality/value/news filters dropped tickers whenever the score was
+  NA, not just when explicitly bad. With BBG entitlement gaps producing
+  many NA scores, this collapsed the candidate universe to zero on
+  every rebalance. The strategy ended up holding 100% cash for the
+  entire backtest (CAGR ~1.8%, matching the 3M T-bill rate, beta to
+  market ~0).
+- v2 relaxes the filters: NA-scored stocks pass through; news
+  eligibility is "X-of-non-NA" instead of "X-of-all"; engine enforces a
+  hard 80% equity floor by filling the residual with SPX TR if
+  selection returns empty.
+
+WE DID NOT GET TO RUN v2 IN R BEFORE THE PYTHON RESTART, so we do not
+know if the v2 fixes actually deliver a non-cash portfolio. That's the
+first thing the Python version should verify.
+
+
+6. CACHED DATA YOU MAY OR MAY NOT WANT TO REUSE
+------------------------------------------------
+The R extraction wrote these parquet files. Python can read them with
+pyarrow / pandas without going through Bloomberg again:
+
+    data/universe/spx_constituents_quarterly.parquet
+        - 40,175 rows
+        - schema: snapshot_date, ticker_raw, ticker (normalised),
+                  percent_weight, gics_sector_name, gics_industry_name,
+                  id_bb_global
+
+    data/raw/prices_daily.parquet
+        - ~3M rows, ~50 MB
+        - schema: date, ticker, px_last, px_volume, eqy_sh_out,
+                  cur_mkt_cap
+
+    data/raw/fundamentals_quarterly.parquet
+        - schema: date, ticker, plus whichever of the quality+value
+                  fields survived the preflight on this terminal
+
+    data/raw/news_signals_quarterly.parquet
+        - schema: date, ticker, plus the surviving news fields
+
+    data/raw/ownership_quarterly.parquet
+        - schema: date, ticker, eqy_float (ONLY — passive fields all
+                  entitlement-locked)
+
+    data/raw/macro_daily.parquet
+        - schema: date, ticker, series_name, px_last (long format)
+
+If you re-run the extraction in Python, you can overwrite these. If you
+just want to start coding the strategy logic, load them as-is and skip
+the extraction step.
+
+
+7. PYTHON API RECOMMENDATION
+----------------------------
+PRIMARY:
+    blpapi (Python bindings of Bloomberg's BLPAPI). The direct analog of
+    Rblpapi. Documentation:
+        https://bloomberg.github.io/blpapi-docs/python/3.26.3/
+    Canonical request flow:
+        import blpapi
+        opts = blpapi.SessionOptions()
+        opts.setServerHost("localhost"); opts.setServerPort(8194)
+        sess = blpapi.Session(opts); sess.start()
+        sess.openService("//blp/refdata")
+        svc = sess.getService("//blp/refdata")
+        req = svc.createRequest("HistoricalDataRequest")
+        req.getElement("securities").appendValue("AAPL US Equity")
+        req.getElement("fields").appendValue("PX_LAST")
+        req.set("startDate", "20200101"); req.set("endDate", "20241231")
+        req.set("periodicitySelection", "DAILY")
+        sess.sendRequest(req)
+        # then loop on sess.nextEvent(), check eventType in
+        # {PARTIAL_RESPONSE, RESPONSE}, extract message elements.
+
+    Three request types cover everything we need:
+        - ReferenceDataRequest    (current values + bulk fields like
+                                   INDX_MWEIGHT_HIST)
+        - HistoricalDataRequest   (daily / quarterly time series)
+        - IntradayBarRequest      (not needed for this strategy)
+
+ALTERNATIVE (preferred if entitled):
+    BQuant / "A Python API for Investment Research". Higher-level
+    Pythonic interface designed for exactly this kind of factor /
+    backtest workflow. If your team has BQuant entitlement, prefer it
+    over raw blpapi.
+
+THIRD-PARTY WRAPPERS (consider but vet):
+    - xbbg, pdblp — pandas-friendly wrappers over blpapi. Faster to
+      iterate with but you give up some control. Fine for the
+      extraction layer; not necessary for the analytics layer.
+
+DO NOT INSTALL OR USE:
+    - Any derivatives-pricing API (no derivatives constraint)
+    - Any OMS / order-routing API (this is research, not execution)
+    - Any subscription / real-time tick API (the strategy is daily-bar)
+
+
+8. WHAT YOU CAN PROPOSE TO CHANGE (thesis-open items)
+------------------------------------------------------
+The user is explicitly open to thesis and strategy revisions. Items that
+are reasonable to question:
+
+- Composite formula. rank_product is a v2 default — rank_sum,
+  rank_intersection, weighted-by-signal-IC, or a 3-component score that
+  adds momentum or value alongside news+passive are all on the table.
+- Universe. Historical SPX is methodologically clean. Russell 1000
+  expands the universe by ~2x. Excluding the bottom 100 names by
+  market cap is also reasonable.
+- Rebalance cadence. Quarterly is the v1 default. Monthly would track
+  the news signal faster but increase turnover. Worth testing.
+- Position sizing. Inverse-vol within sector is v1. Risk parity,
+  minimum variance, or equal-weight within the long book are all
+  defensible. Volatility-targeted gross exposure (cap at 1.0) is
+  another option that keeps the 80% floor while controlling realised
+  vol.
+- The thesis itself. If the proxy passive-intensity (size + low
+  turnover) makes the strategy effectively a low-vol-plus-quality
+  bet rather than a distinct passive-ownership-drift bet, the honest
+  framing of the strategy should be revised in the README. The R
+  prototype's notes/V1_BACKTEST_GUIDE flagged this as a known risk to
+  honestly disclose.
+
+WHAT IS NOT NEGOTIABLE:
+    The three constraints in section 2. Everything else is up for
+    discussion.
+
+
+9. SUGGESTED PYTHON PROJECT LAYOUT
+-----------------------------------
+Mirror the R layout for ease of cross-reference, OR collapse to a
+simpler one if a Python framework like Zipline or vectorbt is
+appropriate. Either way:
+
+    config/         settings.py, bbg_fields.py
+    bloomberg/      extract_*.py    (one per data domain)
+    src/            signals/, portfolio.py, backtest.py, metrics.py
+    notebooks/      .ipynb files for exploration + presentation
+    data/           same parquet layout as the R version (so the R
+                    artefacts are reusable)
+    output/         figures, tables, reports
+    pyproject.toml  or requirements.txt; pin python >= 3.10
+
+Tooling to consider:
+    - pandas / polars / pyarrow for data
+    - numpy / scipy for stats
+    - empyrical or quantstats for performance metrics
+    - matplotlib / plotnine for figures
+    - blpapi for Bloomberg access
+
+
+10. FIRST THINGS TO DO
+-----------------------
+(a) Verify the Bloomberg connection works in Python:
+        import blpapi
+        opts = blpapi.SessionOptions()
+        opts.setServerHost("localhost"); opts.setServerPort(8194)
+        sess = blpapi.Session(opts)
+        assert sess.start() and sess.openService("//blp/refdata")
+        # one historical pull of AAPL PX_LAST over the last 30 days.
+
+(b) Confirm you can READ the existing parquet files:
+        import pandas as pd
+        u = pd.read_parquet("data/universe/spx_constituents_quarterly.parquet")
+        p = pd.read_parquet("data/raw/prices_daily.parquet")
+        # spot-check shapes, dates, ticker formats.
+
+(c) Decide whether to:
+    (i)  port the R strategy 1:1 — keep the thesis and parameters,
+         just change the language. Faster path to a result; harder to
+         improve along the way.
+    (ii) rebuild from the thesis — use the cached data but redesign
+         the signals, scoring, and portfolio construction with fresh
+         eyes. Slower, but more likely to produce something genuinely
+         working given how much v1 didn't.
+
+    My recommendation: lean toward (ii). v1 had real conceptual issues
+    (the composite sign-flip, the brittle filter, the missing
+    eqy-exposure floor) that papering over in Python would be a
+    mistake. The thesis is solid; the v1 implementation isn't a good
+    template.
+
+(d) Run the diagnostics that the R version was about to run when the
+    restart was triggered:
+        - For each rebalance date, how many tickers have non-NA
+          news_score, passive_intensity, quality_score, value_score?
+        - For each rebalance date, how many tickers pass each filter
+          step (the funnel)?
+    These two diagnostic tables will tell you whether the v2-style
+    filters work or need further relaxation. If the funnel still
+    collapses, the signals themselves need rethinking before any
+    portfolio-construction work matters.
+
+
+11. KNOWN R-SIDE BUGS YOU DON'T NEED TO REINVENT
+-------------------------------------------------
+Just avoid these by design:
+- BDS returns mixed-case columns (BDP returns uppercase, BDS lowercased
+  ours). Lowercase every column at extraction time.
+- Parquet writes fail on Windows if the file is mmap'd by a prior read
+  in the same process. Read with mmap=False, or close the file handle
+  before re-writing.
+- max() on empty vectors warns and returns -Inf; guard with
+  `if len(x) == 0: ...`.
+- Bloomberg "date" column comes back as the first column with default
+  case "date" but can vary across versions; always detect by name
+  match, never by index position.
+- Trailing whitespace and double-suffixed tickers ("AAPL US Equity US
+  Equity") silently break BDH; canonicalise tickers ONCE at extraction
+  time and only ever pass canonical form to BBG.
+
+
+12. WHERE THE CURRENT R ARTEFACTS LIVE
+---------------------------------------
+- Latest R branch:        claude/v2-optimise-passive-drift
+- Latest R commit:        bd20755 ("v2: optimise strategy under user
+                          constraints...")
+- Last R run's outputs:   output/tables/performance_summary_10yr.csv
+                          output/tables/performance_summary_20yr.csv
+                          (both show the v1 100%-cash failure; the
+                          v2 fixes were not yet run in R)
+
+The Python version can either:
+    - co-exist on the same branch (a `python/` subdir alongside `R/`)
+    - get its own branch (e.g. `claude/v3-python-rebuild`)
+The user has not yet specified — ask before pushing.
+
+================================================================================
+END OF CONTEXT FILE.
+The thesis is open. The constraints are not. Build something that actually
+holds equities and actually exploits the slow-information-diffusion mechanism.
+================================================================================
