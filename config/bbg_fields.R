@@ -43,17 +43,14 @@ bbg_fields <- list(
     "EARN_YLD"
   ),
 
-  # Fundamental news signal inputs.
-  # Note: EARN_ANN_DT_TIME_HIST_WITH_EPS is a bulk reference field and must
-  # be pulled via bds(); it is intentionally excluded from this BDH pull.
+  # Fundamental news signal inputs (4 components, multi-signal confirmation).
   news = c(
     "BEST_EPS",
     "IS_EPS",
     "BEST_SALES",
     "SALES_REV_TURN",
     "OPER_MARGIN",
-    "BEST_EPS_REVISION_RATIO_1M",
-    "LATEST_ANNOUNCEMENT_DT"
+    "BEST_EPS_REVISION_RATIO_1M"
   ),
 
   # Passive ownership (THE key field set)
@@ -71,18 +68,12 @@ bbg_fields <- list(
     "ID_BB_GLOBAL"          # stable identifier across renamings
   ),
 
-  # Macro / regime inputs
+  # Macro / benchmark inputs. No regime layer in v1, so this is just the
+  # primary benchmark, the equal-weight comparator, and the cash rate.
   macro_tickers = list(
-    vix          = "VIX Index",
-    hy_oas       = "LF98TRUU Index",       # Bloomberg US Corporate HY YTW spread
-    yc_slope     = "USYC3M10 Index",       # 10Y - 3M slope
-    yc_10y       = "USGG10YR Index",
-    yc_3m        = "USGG3M Index",
-    move         = "MOVE Index",
-    spx          = "SPX Index",
-    spxew        = "SPXEW Index",   # equal-weight (price). Use SPXEWTR for TR if entitled.
-    spx_tr       = "SPXT Index",    # S&P 500 Total Return Index
-    cash_rate    = "USGG3M Index"
+    spx_tr    = "SPXT Index",       # S&P 500 Total Return Index
+    spxew     = "SPXEW Index",      # equal-weight S&P 500 (use SPXEWTR for TR if entitled)
+    cash_rate = "USGG3M Index"      # 3-month T-bill
   ),
   macro_field = "PX_LAST",
 

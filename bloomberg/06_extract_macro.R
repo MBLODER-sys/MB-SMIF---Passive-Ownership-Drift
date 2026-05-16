@@ -1,5 +1,7 @@
 # bloomberg/06_extract_macro.R
-# Macro / regime inputs and benchmark price series.
+# Benchmark + cash rate series. The full regime layer has been removed in
+# v1; this extraction now pulls only SPXT (benchmark), SPXEW (equal-weight
+# comparator), and USGG3M (cash rate).
 
 suppressPackageStartupMessages({
   library(Rblpapi)

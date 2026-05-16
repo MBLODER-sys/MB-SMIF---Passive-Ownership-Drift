@@ -117,10 +117,13 @@ bootstrap_sharpe_ci <- function(rets,
 }
 
 
-# Compute year-by-year returns table for a long-format daily returns frame.
+# Year-by-year compounded returns. NAs are treated as 0 within a year so a
+# single missing day doesn't blank the whole year.
 annual_return_table <- function(returns_dt, label = "portfolio") {
   setDT(returns_dt)
+  returns_dt <- copy(returns_dt)
   returns_dt[, date := as.Date(date)]
+  returns_dt[is.na(ret), ret := 0]
   returns_dt[, year := as.integer(format(date, "%Y"))]
   yr <- returns_dt[, .(annual_return = prod(1 + ret) - 1), by = year]
   setnames(yr, "annual_return", label)
