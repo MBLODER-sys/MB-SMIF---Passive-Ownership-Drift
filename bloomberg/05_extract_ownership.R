@@ -13,8 +13,7 @@ suppressPackageStartupMessages({
 if (requireNamespace("rprojroot", quietly = TRUE)) {
   .proj_root <- rprojroot::find_root(rprojroot::has_file("README.md"))
 } else {
-  .proj_root <- normalizePath(file.path(dirname(sys.frame(1)$ofile), ".."),
-                              mustWork = FALSE)
+  .proj_root <- normalizePath(getwd(), mustWork = FALSE)
 }
 source(file.path(.proj_root, "config", "settings.R"))
 source(file.path(.proj_root, "config", "bbg_fields.R"))
