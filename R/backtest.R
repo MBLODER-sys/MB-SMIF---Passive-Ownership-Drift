@@ -127,8 +127,10 @@ build_spx_sector_weights <- function(universe_dt, rebalance_dates) {
   out_rows <- vector("list", length(rebalance_dates))
   for (i in seq_along(rebalance_dates)) {
     rd <- as.Date(rebalance_dates[i])
-    snap <- universe_dt[snapshot_date <= rd,
-                        .SD[snapshot_date == max(snapshot_date)]]
+    snap <- universe_dt[snapshot_date <= rd]
+    if (nrow(snap) == 0) next   # no universe snapshot yet (first rebalance)
+    latest <- max(snap$snapshot_date)
+    snap <- snap[snapshot_date == latest]
     sec_w <- snap[, .(spx_weight = sum(get(weight_col), na.rm = TRUE) / 100),
                   by = gics_sector_name]
     sec_w[, rebalance_date := rd]

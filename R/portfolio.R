@@ -17,9 +17,11 @@ build_portfolio <- function(rebalance_date,
   mode <- match.arg(mode)
   rd <- as.Date(rebalance_date)
 
-  # Use ..rd to escape data.table NSE and reference the function-scope scalar
-  # rather than the in-table column.
-  s <- copy(scores_dt[rebalance_date == ..rd])
+  # `rd` is a function-scope scalar; `rebalance_date` is a column on
+  # scores_dt and spx_sector_weights_dt. Because the parameter was
+  # renamed to `rd`, plain references find the scalar in calling scope
+  # with no NSE shadowing risk.
+  s <- copy(scores_dt[rebalance_date == rd])
   if (nrow(s) == 0) return(data.table(ticker = character(), weight = numeric()))
 
   # Hard exclusions.
@@ -58,7 +60,7 @@ build_portfolio <- function(rebalance_date,
 
   # Inverse-volatility weighting using 90D realized vol.
   vol_window_start <- rd - settings$vol_window_days * 1.5
-  vol <- prices_dt[ticker %in% sel$ticker & date <= ..rd & date >= vol_window_start,
+  vol <- prices_dt[ticker %in% sel$ticker & date <= rd & date >= vol_window_start,
                    .(vol_90 = stats::sd(ret, na.rm = TRUE) * sqrt(252)),
                    by = ticker]
   sel <- merge(sel, vol, by = "ticker", all.x = TRUE)
@@ -69,7 +71,7 @@ build_portfolio <- function(rebalance_date,
   # Sector-neutrality with tolerance band.
   sel[, within_sector_w := inv_vol_weight / sum(inv_vol_weight, na.rm = TRUE),
       by = gics_sector_name]
-  sec_w <- copy(spx_sector_weights_dt[rebalance_date == ..rd])
+  sec_w <- copy(spx_sector_weights_dt[rebalance_date == rd])
   if (nrow(sec_w) > 0) {
     sel <- merge(sel, sec_w[, .(gics_sector_name, spx_weight)],
                  by = "gics_sector_name", all.x = TRUE)
